@@ -7,10 +7,11 @@
     "dev": "bun run server & bun run client",
     "client": "vite",
     "server": "tsx server/index.ts",
-    "build": "vite build",
+    "build": "vite build && echo 'Frontend built successfully'",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prod": "bun run build && bun run server"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
