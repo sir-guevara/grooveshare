@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Cinematic Dark Theme */
+    --background: 240 10% 8%;
+    --foreground: 240 5% 96%;
+
+    --card: 240 8% 12%;
+    --card-foreground: 240 5% 96%;
+
+    --popover: 240 8% 10%;
+    --popover-foreground: 240 5% 96%;
+
+    --primary: 290 60% 85%;
+    --primary-foreground: 240 5% 10%;
+    --primary-glow: 290 70% 75%;
+
+    --secondary: 240 8% 18%;
+    --secondary-foreground: 240 5% 96%;
+
+    --muted: 240 8% 16%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 195 85% 55%;
+    --accent-foreground: 240 5% 10%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 240 5% 96%;
+
+    --border: 240 8% 20%;
+    --input: 240 8% 16%;
+    --ring: 290 60% 85%;
+
+    --radius: 0.75rem;
+
+    /* Cinematic effects */
+    --gradient-cinema: linear-gradient(135deg, hsl(290 60% 85% / 0.2), hsl(195 85% 55% / 0.2));
+    --gradient-hero: linear-gradient(180deg, hsl(240 10% 8%), hsl(240 10% 12%));
+    --glow-primary: 0 0 40px hsl(290 70% 75% / 0.4);
+    --glow-accent: 0 0 30px hsl(195 85% 55% / 0.3);
+    --glass-bg: hsl(240 8% 12% / 0.6);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

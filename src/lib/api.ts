@@ -1,0 +1,129 @@
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const TOKEN_KEY = "watchparty_token";
+
+const getToken = () => localStorage.getItem(TOKEN_KEY);
+const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
+const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+type RequestInitWithBody = Omit<RequestInit, "body"> & {
+  body?: any;
+  rawBody?: BodyInit;
+};
+
+const request = async <T>(
+  path: string,
+  options: RequestInitWithBody = {}
+): Promise<T> => {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (!(options.rawBody instanceof FormData)) {
+    headers["Content-Type"] = headers["Content-Type"] ?? "application/json";
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+    body:
+      options.rawBody ||
+      (options.body && headers["Content-Type"] === "application/json"
+        ? JSON.stringify(options.body)
+        : (options.body as BodyInit)),
+  });
+
+  if (!res.ok) {
+    const message = (await res.json().catch(() => ({} as { error?: string })))
+      .error;
+    throw new Error(message || "Request failed");
+  }
+
+  return res.json() as Promise<T>;
+};
+
+export const api = {
+  getToken,
+  setToken,
+  clearToken,
+  async signup(email: string, password: string, username: string) {
+    const data = await request<{ token: string; user: any }>("/auth/signup", {
+      method: "POST",
+      body: { email, password, username },
+    });
+    setToken(data.token);
+    return data.user;
+  },
+  async login(email: string, password: string) {
+    const data = await request<{ token: string; user: any }>("/auth/login", {
+      method: "POST",
+      body: { email, password },
+    });
+    setToken(data.token);
+    return data.user;
+  },
+  async currentUser() {
+    return request<{ user: any }>("/auth/me", { method: "GET" });
+  },
+  logout() {
+    clearToken();
+  },
+  async createRoom(username: string) {
+    return request<{ room: any; code: string }>("/rooms", {
+      method: "POST",
+      body: { username },
+    });
+  },
+  async joinRoom(code: string, username: string) {
+    return request<{ room: any }>(`/rooms/${code}/join`, {
+      method: "POST",
+      body: { username },
+    });
+  },
+  async getRoomWithParticipants(code: string) {
+    return request<{ room: any; participants: any[] }>(`/rooms/${code}`, {
+      method: "GET",
+    });
+  },
+  async updateRoom(
+    id: string,
+    updates: Partial<{
+      video_url: string;
+      playback_position: number;
+      is_playing: boolean;
+      subtitle_enabled: boolean;
+    }>
+  ) {
+    return request<{ room: any }>(`/rooms/${id}`, {
+      method: "PUT",
+      body: updates,
+    });
+  },
+  async listParticipants(roomId: string) {
+    return request<{ participants: any[] }>(`/rooms/${roomId}/participants`);
+  },
+  async listMedia() {
+    return request<{ media: any[] }>("/media", { method: "GET" });
+  },
+  async uploadMedia(
+    file: File,
+    payload: { title: string; description?: string }
+  ) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("title", payload.title);
+    if (payload.description) formData.append("description", payload.description);
+
+    return request<{ fileUrl: string }>("/media", {
+      method: "POST",
+      rawBody: formData,
+    });
+  },
+  async deleteMedia(id: string) {
+    return request<{ success: boolean }>(`/media/${id}`, { method: "DELETE" });
+  },
+};
