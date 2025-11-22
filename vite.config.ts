@@ -8,7 +8,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: ["grooveshare.net","www.grooveshare.net", "localhost"],
+    allowedHosts: ["grooveshare.net", "www.grooveshare.net", "localhost"],
+    proxy: {
       "/api": "http://localhost:4000",
       "/uploads": "http://localhost:4000",
     },
