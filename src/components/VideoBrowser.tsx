@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Film, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -95,46 +94,38 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
       {mediaFiles.map((file) => (
         <Card
           key={file.id}
-          className="backdrop-blur-glass bg-card/60 border-border/50 overflow-hidden hover:border-primary/50 transition-colors cursor-pointer"
+          className="backdrop-blur-glass bg-card/60 border-border/50 overflow-hidden hover:border-primary/50 transition-colors cursor-pointer group"
           onClick={() => handleSelectVideo(file)}
         >
-          <div className="aspect-video bg-black/50 flex items-center justify-center overflow-hidden">
+          <div className="aspect-video bg-black/50 flex items-center justify-center overflow-hidden relative">
             {file.posterUrl ? (
               <img
                 src={file.posterUrl}
                 alt={file.title}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
               />
-            ) : (
-              <Film className="h-12 w-12 text-muted-foreground" />
+            ) : null}
+            {!file.posterUrl && (
+              <Film className="h-8 w-8 text-muted-foreground" />
             )}
           </div>
-          <div className="p-4">
-            <h3 className="font-semibold mb-1 truncate">{file.title}</h3>
-            {file.description && (
-              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                {file.description}
-              </p>
+          <div className="p-2">
+            <h3 className="font-semibold text-xs mb-1 truncate">{file.title}</h3>
+            {file.releaseYear && (
+              <p className="text-xs text-muted-foreground">{file.releaseYear}</p>
             )}
-            <Button
-              variant="default"
-              size="sm"
-              className="w-full shadow-glow-primary"
-              disabled={selectedId === file.id}
-            >
-              {selectedId === file.id ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Selected
-                </>
-              ) : (
-                "Select Video"
-              )}
-            </Button>
+            {selectedId === file.id && (
+              <div className="mt-2 flex items-center justify-center text-green-500">
+                <Check className="h-4 w-4" />
+              </div>
+            )}
           </div>
         </Card>
       ))}
