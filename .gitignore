@@ -37,3 +37,7 @@ dist-ssr
 *.tar.gz 
  *.sqlite
 **/uploads/
+
+
+*sqlite-shm
+*.sqlite-wal
