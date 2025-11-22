@@ -64,7 +64,10 @@ export const useRoomWebSocket = (
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
 
-          if (message.type === "room_update") {
+          if (message.type === "room_state") {
+            // New user joining - receive current room state
+            callbacksRef.current.onRoomUpdate(message.payload);
+          } else if (message.type === "room_update") {
             callbacksRef.current.onRoomUpdate(message.payload);
           } else if (message.type === "seek") {
             callbacksRef.current.onSeek(message.position || 0, message.username || "Unknown");

@@ -32,13 +32,29 @@ const mapRoom = (data: any): RoomData => ({
   subtitle_enabled: Boolean(data.subtitle_enabled ?? data.subtitleEnabled),
 });
 
+const getMimeType = (url: string): string => {
+  if (!url) return "video/mp4";
+  const ext = url.split(".").pop()?.toLowerCase() || "";
+  const mimeTypes: { [key: string]: string } = {
+    mp4: "video/mp4",
+    mkv: "video/x-matroska",
+    webm: "video/webm",
+    avi: "video/x-msvideo",
+    mov: "video/quicktime",
+    flv: "video/x-flv",
+    wmv: "video/x-ms-wmv",
+    m4v: "video/x-m4v",
+  };
+  return mimeTypes[ext] || "video/mp4";
+};
+
 const Room = () => {
   const { code } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
+
   const [room, setRoom] = useState<RoomData | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -368,8 +384,9 @@ const Room = () => {
                   playsInline
                   controls
                   crossOrigin="anonymous"
+                  preload="metadata"
                 >
-                  <source src={room.video_url} type="video/mp4" />
+                  <source src={room.video_url} type={getMimeType(room.video_url)} />
                   {room.subtitle_enabled && (
                     <track kind="subtitles" src="" label="English" default />
                   )}

@@ -568,6 +568,25 @@ wss.on("connection", (ws: WebSocket) => {
         }
         roomConnections.get(roomCode)!.add(ws);
 
+        // Send current room state to the new user
+        const room = db
+          .select()
+          .from(rooms)
+          .where(eq(rooms.code, roomCode))
+          .all()[0];
+
+        if (room) {
+          ws.send(JSON.stringify({
+            type: "room_state",
+            payload: {
+              video_url: room.videoUrl,
+              playback_position: room.playbackPosition,
+              is_playing: room.isPlaying,
+              subtitle_enabled: room.subtitleEnabled,
+            },
+          }));
+        }
+
         // Broadcast user joined
         broadcastToRoom(roomCode, {
           type: "user_joined",
