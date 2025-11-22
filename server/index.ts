@@ -539,8 +539,19 @@ const broadcastToRoom = (roomCode: string, message: unknown, excludeWs?: WebSock
 // Create HTTP server
 const server = createServer(app);
 
-// Create WebSocket server
-const wss = new WebSocketServer({ server });
+// Create WebSocket server with noServer option to handle upgrade manually
+const wss = new WebSocketServer({ noServer: true });
+
+// Handle WebSocket upgrade
+server.on("upgrade", (request, socket, head) => {
+  if (request.url === "/ws") {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
+});
 
 wss.on("connection", (ws: WebSocket) => {
   ws.on("message", (data: string) => {
