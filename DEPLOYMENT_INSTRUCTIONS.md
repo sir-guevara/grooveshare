@@ -17,6 +17,7 @@
 
 ### 3. Nginx (`nginx-grooveshare.conf`)
 
+- `/api/`: **FIXED** - Now proxies to `http://127.0.0.1:4000/api/` (preserves `/api` prefix)
 - `/uploads/`: Proxy with `proxy_buffering off` for smooth streaming
 - `/ws`: WebSocket upgrade with proper headers and 24-hour timeout
 
