@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, Trash2, Film, ArrowLeft } from "lucide-react";
 import { api } from "@/lib/api";
@@ -36,7 +37,13 @@ const MediaLibrary = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  
+  const [uploadProgress, setUploadProgress] = useState({
+    percentage: 0,
+    loaded: 0,
+    total: 0,
+    eta: 0,
+  });
+
   const [uploadForm, setUploadForm] = useState({
     title: "",
     description: "",
@@ -104,12 +111,24 @@ const MediaLibrary = () => {
     }
 
     setUploading(true);
+    setUploadProgress({ percentage: 0, loaded: 0, total: 0, eta: 0 });
 
     try {
-      await api.uploadMedia(file, {
-        title: uploadForm.title,
-        description: uploadForm.description || undefined,
-      });
+      await api.uploadMedia(
+        file,
+        {
+          title: uploadForm.title,
+          description: uploadForm.description || undefined,
+        },
+        (progress) => {
+          setUploadProgress({
+            percentage: progress.percentage,
+            loaded: progress.loaded,
+            total: progress.total,
+            eta: progress.eta,
+          });
+        }
+      );
 
       toast({
         title: "Upload successful!",
@@ -126,6 +145,7 @@ const MediaLibrary = () => {
       });
     } finally {
       setUploading(false);
+      setUploadProgress({ percentage: 0, loaded: 0, total: 0, eta: 0 });
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -221,6 +241,27 @@ const MediaLibrary = () => {
                   <Upload className="h-4 w-4 mr-2" />
                   {uploading ? "Uploading..." : "Select & Upload Video"}
                 </Button>
+
+                {/* Upload Progress */}
+                {uploading && uploadProgress.total > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <Progress value={uploadProgress.percentage} className="h-2" />
+                    <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+                      <div>
+                        <p className="font-medium text-foreground">{uploadProgress.percentage}%</p>
+                        <p className="text-xs">
+                          {(uploadProgress.loaded / 1024 / 1024).toFixed(1)} MB / {(uploadProgress.total / 1024 / 1024).toFixed(1)} MB
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {uploadProgress.eta > 0 ? `${uploadProgress.eta}s` : "Calculating..."}
+                        </p>
+                        <p className="text-xs">Time remaining</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </Card>

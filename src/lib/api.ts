@@ -111,16 +111,67 @@ export const api = {
   },
   async uploadMedia(
     file: File,
-    payload: { title: string; description?: string }
+    payload: { title: string; description?: string },
+    onProgress?: (progress: { loaded: number; total: number; percentage: number; eta: number }) => void
   ) {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("title", payload.title);
     if (payload.description) formData.append("description", payload.description);
 
-    return request<{ fileUrl: string }>("/media", {
-      method: "POST",
-      rawBody: formData,
+    return new Promise<{ fileUrl: string }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const token = getToken();
+
+      // Track upload progress
+      if (onProgress) {
+        let startTime = Date.now();
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable) {
+            const loaded = e.loaded;
+            const total = e.total;
+            const percentage = Math.round((loaded / total) * 100);
+            const elapsed = (Date.now() - startTime) / 1000; // seconds
+            const speed = loaded / elapsed; // bytes per second
+            const remaining = total - loaded;
+            const eta = Math.round(remaining / speed); // seconds
+
+            onProgress({ loaded, total, percentage, eta });
+          }
+        });
+      }
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch (e) {
+            reject(new Error("Failed to parse response"));
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText);
+            reject(new Error(error.error || "Upload failed"));
+          } catch {
+            reject(new Error("Upload failed"));
+          }
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        reject(new Error("Upload failed"));
+      });
+
+      xhr.addEventListener("abort", () => {
+        reject(new Error("Upload cancelled"));
+      });
+
+      xhr.open("POST", `${API_BASE}/media`);
+      if (token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      }
+      xhr.send(formData);
     });
   },
   async deleteMedia(id: string) {
