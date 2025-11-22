@@ -180,6 +180,15 @@ const Room = () => {
     fetchRoom();
   }, [code, navigate, toast]);
 
+  // Handle video source changes
+  useEffect(() => {
+    if (!videoRef.current || !room?.video_url) return;
+
+    // Reset video element to force reload
+    videoRef.current.load();
+    console.log("Video source changed, reloading:", room.video_url);
+  }, [room?.video_url]);
+
   const updateRoomState = async (updates: Partial<RoomData>) => {
     if (!room) return;
 
@@ -374,12 +383,13 @@ const Room = () => {
                     }
                   }}
                   onError={(e) => {
-                    console.error("Video error:", e);
-                    toast({
-                      title: "Video Error",
-                      description: "Failed to load video. Check the URL and try again.",
-                      variant: "destructive",
-                    });
+                    const video = e.target as HTMLVideoElement;
+                    const errorCode = video.error?.code;
+                    const errorMessage = video.error?.message;
+                    console.error("Video error:", { errorCode, errorMessage, url: room.video_url, mimeType: getMimeType(room.video_url) });
+                  }}
+                  onLoadedMetadata={() => {
+                    console.log("Video metadata loaded:", { url: room.video_url, duration: videoRef.current?.duration });
                   }}
                   playsInline
                   controls
@@ -387,9 +397,6 @@ const Room = () => {
                   preload="metadata"
                 >
                   <source src={room.video_url} type={getMimeType(room.video_url)} />
-                  {room.subtitle_enabled && (
-                    <track kind="subtitles" src="" label="English" default />
-                  )}
                   Your browser does not support the video tag.
                 </video>
               </div>
