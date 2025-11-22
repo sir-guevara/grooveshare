@@ -348,7 +348,7 @@ const Room = () => {
               <div className="aspect-video">
                 <video
                   ref={videoRef}
-                  src={room.video_url}
+                  key={room.video_url}
                   className="w-full h-full"
                   onTimeUpdate={handleVideoTimeUpdate}
                   onSeeked={() => {
@@ -357,13 +357,23 @@ const Room = () => {
                       updateRoomState({ playback_position: videoRef.current.currentTime });
                     }
                   }}
+                  onError={(e) => {
+                    console.error("Video error:", e);
+                    toast({
+                      title: "Video Error",
+                      description: "Failed to load video. Check the URL and try again.",
+                      variant: "destructive",
+                    });
+                  }}
                   playsInline
                   controls
                   crossOrigin="anonymous"
                 >
+                  <source src={room.video_url} type="video/mp4" />
                   {room.subtitle_enabled && (
                     <track kind="subtitles" src="" label="English" default />
                   )}
+                  Your browser does not support the video tag.
                 </video>
               </div>
             ) : (

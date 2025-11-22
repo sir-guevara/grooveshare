@@ -41,9 +41,9 @@ export const useRoomWebSocket = (
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const apiHost = import.meta.env.VITE_API_URL || "http://localhost:4000";
-    const apiUrl = new URL(apiHost);
-    const wsUrl = `${protocol}//${apiUrl.hostname}:${apiUrl.port || (protocol === "wss:" ? "443" : "80")}`;
+    const hostname = window.location.hostname;
+    const port = window.location.port;
+    const wsUrl = `${protocol}//${hostname}${port ? `:${port}` : ""}/ws`;
 
     try {
       wsRef.current = new WebSocket(wsUrl);

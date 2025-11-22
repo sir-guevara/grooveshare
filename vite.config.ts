@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    allowedHosts: ["grooveshare.net","www.grooveshare.net", "localhost","nonrecollective-magnolia-innovative.ngrok-free.dev"], // add your ngrok host here if needed
     proxy: {
       "/api": "http://localhost:4000",
       "/uploads": "http://localhost:4000",

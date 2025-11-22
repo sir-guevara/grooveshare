@@ -31,8 +31,19 @@ ensureDatabase();
 const uploadDir = path.join(process.cwd(), "server", "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 
+const storage = multer.diskStorage({
+  destination: uploadDir,
+  filename: (req, file, cb) => {
+    // Preserve file extension
+    const ext = path.extname(file.originalname);
+    const name = path.basename(file.originalname, ext);
+    const filename = `${name}-${Date.now()}${ext}`;
+    cb(null, filename);
+  },
+});
+
 const upload = multer({
-  dest: uploadDir,
+  storage,
   limits: { fileSize: 1024 * 1024 * 5000 }, // 5GB ceiling
 });
 
@@ -47,7 +58,40 @@ app.use(
 );
 app.use(express.json({ limit: "5gb" }));
 app.use(express.urlencoded({ limit: "5gb", extended: true }));
-app.use("/uploads", express.static(uploadDir));
+
+// Serve uploads with proper video MIME types and streaming support
+app.use("/uploads", (req, res, next) => {
+  const filePath = path.join(uploadDir, req.path);
+  const ext = path.extname(filePath).toLowerCase();
+
+  // Set proper MIME types for video files
+  const mimeTypes: { [key: string]: string } = {
+    ".mp4": "video/mp4",
+    ".mkv": "video/x-matroska",
+    ".webm": "video/webm",
+    ".avi": "video/x-msvideo",
+    ".mov": "video/quicktime",
+    ".flv": "video/x-flv",
+    ".wmv": "video/x-ms-wmv",
+    ".m4v": "video/x-m4v",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+  };
+
+  if (mimeTypes[ext]) {
+    res.setHeader("Content-Type", mimeTypes[ext]);
+  }
+
+  // Enable range requests for video streaming
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
+
+  next();
+}, express.static(uploadDir));
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
