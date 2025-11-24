@@ -15,6 +15,7 @@ import { ensureDatabase } from "./db/setup";
 import {
   mediaFiles,
   roomParticipants,
+  roomJoinRequests,
   rooms,
   userRoles,
   users,
@@ -326,6 +327,7 @@ app.post(`${apiBase}/rooms`, (req, res) => {
       id: randomUUID(),
       roomId,
       username: username.trim(),
+      isHost: true,
       joinedAt: now,
     })
     .run();
@@ -337,7 +339,7 @@ app.post(`${apiBase}/rooms`, (req, res) => {
 });
 
 app.post(`${apiBase}/rooms/:code/join`, (req, res) => {
-  const { username } = req.body;
+  const { username, browserName, browserVersion } = req.body;
   const { code } = req.params;
 
   if (!username?.trim()) {
@@ -353,16 +355,115 @@ app.post(`${apiBase}/rooms/:code/join`, (req, res) => {
 
   const now = new Date();
 
-  db.insert(roomParticipants)
+  // Create a join request instead of directly adding participant
+  db.insert(roomJoinRequests)
     .values({
       id: randomUUID(),
       roomId: room.id,
       username: username.trim(),
+      browserName: browserName || "Unknown",
+      browserVersion: browserVersion || "Unknown",
+      status: "pending",
+      requestedAt: now,
+    })
+    .run();
+
+  return res.json({ room, status: "pending", message: "Waiting for host approval" });
+});
+
+// Get pending join requests for a room (host only)
+app.get(`${apiBase}/rooms/:code/join-requests`, (req, res) => {
+  const { code } = req.params;
+
+  const room =
+    db.select().from(rooms).where(eq(rooms.code, code)).all()[0] ?? null;
+
+  if (!room) {
+    return res.status(404).json({ error: "Room not found" });
+  }
+
+  const requests = db
+    .select()
+    .from(roomJoinRequests)
+    .where(eq(roomJoinRequests.roomId, room.id))
+    .all();
+
+  return res.json({ requests });
+});
+
+// Approve a join request (host only)
+app.post(`${apiBase}/rooms/:code/join-requests/:requestId/approve`, (req, res) => {
+  const { code, requestId } = req.params;
+
+  const room =
+    db.select().from(rooms).where(eq(rooms.code, code)).all()[0] ?? null;
+
+  if (!room) {
+    return res.status(404).json({ error: "Room not found" });
+  }
+
+  const request = db
+    .select()
+    .from(roomJoinRequests)
+    .where(eq(roomJoinRequests.id, requestId))
+    .all()[0];
+
+  if (!request) {
+    return res.status(404).json({ error: "Join request not found" });
+  }
+
+  const now = new Date();
+
+  // Update request status
+  db.update(roomJoinRequests)
+    .set({ status: "approved", respondedAt: now })
+    .where(eq(roomJoinRequests.id, requestId))
+    .run();
+
+  // Add participant to room
+  db.insert(roomParticipants)
+    .values({
+      id: randomUUID(),
+      roomId: room.id,
+      username: request.username,
+      isHost: false,
       joinedAt: now,
     })
     .run();
 
-  return res.json({ room });
+  return res.json({ message: "User approved and added to room" });
+});
+
+// Reject a join request (host only)
+app.post(`${apiBase}/rooms/:code/join-requests/:requestId/reject`, (req, res) => {
+  const { code, requestId } = req.params;
+
+  const room =
+    db.select().from(rooms).where(eq(rooms.code, code)).all()[0] ?? null;
+
+  if (!room) {
+    return res.status(404).json({ error: "Room not found" });
+  }
+
+  const request = db
+    .select()
+    .from(roomJoinRequests)
+    .where(eq(roomJoinRequests.id, requestId))
+    .all()[0];
+
+  if (!request) {
+    return res.status(404).json({ error: "Join request not found" });
+  }
+
+  const now = new Date();
+
+  // Update request status
+  db.update(roomJoinRequests)
+    .set({ status: "rejected", respondedAt: now })
+    .where(eq(roomJoinRequests.id, requestId))
+    .run();
+
+  return res.json({ message: "Join request rejected" });
 });
 
 app.get(`${apiBase}/rooms/:code`, (req, res) => {
@@ -386,6 +487,7 @@ app.get(`${apiBase}/rooms/:code`, (req, res) => {
 
 app.put(`${apiBase}/rooms/:id`, (req, res) => {
   const { id } = req.params;
+  const { username } = req.body;
   const updates: {
     video_url?: string;
     playback_position?: number;
@@ -397,6 +499,18 @@ app.put(`${apiBase}/rooms/:id`, (req, res) => {
     db.select().from(rooms).where(eq(rooms.id, id)).all()[0] ?? null;
 
   if (!room) return res.status(404).json({ error: "Room not found" });
+
+  // Check if user is host
+  const participant = db
+    .select()
+    .from(roomParticipants)
+    .where(eq(roomParticipants.roomId, id))
+    .all()
+    .find((p) => p.username === username && p.isHost);
+
+  if (!participant) {
+    return res.status(403).json({ error: "Only the host can update room state" });
+  }
 
   const payload: Record<string, unknown> = {
     updatedAt: new Date(),

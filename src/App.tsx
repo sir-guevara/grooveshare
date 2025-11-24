@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Room from "./pages/Room";
+import Lobby from "./pages/Lobby";
 import MediaLibrary from "./pages/MediaLibrary";
 import NotFound from "./pages/NotFound";
 
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/room/:code" element={<Room />} />
+          <Route path="/lobby/:code" element={<Lobby />} />
           <Route path="/media" element={<MediaLibrary />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

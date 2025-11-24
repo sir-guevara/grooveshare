@@ -78,10 +78,10 @@ export const api = {
       body: { username },
     });
   },
-  async joinRoom(code: string, username: string) {
-    return request<{ room: any }>(`/rooms/${code}/join`, {
+  async joinRoom(code: string, username: string, browserName?: string, browserVersion?: string) {
+    return request<{ room: any; status?: string; message?: string }>(`/rooms/${code}/join`, {
       method: "POST",
-      body: { username },
+      body: { username, browserName, browserVersion },
     });
   },
   async getRoomWithParticipants(code: string) {
@@ -96,11 +96,12 @@ export const api = {
       playback_position: number;
       is_playing: boolean;
       subtitle_enabled: boolean;
-    }>
+    }>,
+    username?: string
   ) {
     return request<{ room: any }>(`/rooms/${id}`, {
       method: "PUT",
-      body: updates,
+      body: { ...updates, username },
     });
   },
   async listParticipants(roomId: string) {
@@ -176,5 +177,20 @@ export const api = {
   },
   async deleteMedia(id: string) {
     return request<{ success: boolean }>(`/media/${id}`, { method: "DELETE" });
+  },
+  async getJoinRequests(code: string) {
+    return request<{ requests: any[] }>(`/rooms/${code}/join-requests`, {
+      method: "GET",
+    });
+  },
+  async approveJoinRequest(code: string, requestId: string) {
+    return request<{ message: string }>(`/rooms/${code}/join-requests/${requestId}/approve`, {
+      method: "POST",
+    });
+  },
+  async rejectJoinRequest(code: string, requestId: string) {
+    return request<{ message: string }>(`/rooms/${code}/join-requests/${requestId}/reject`, {
+      method: "POST",
+    });
   },
 };

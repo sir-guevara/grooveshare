@@ -50,9 +50,27 @@ export const roomParticipants = sqliteTable("room_participants", {
     .notNull()
     .references(() => rooms.id, { onDelete: "cascade" }),
   username: text("username").notNull(),
+  isHost: integer("is_host", { mode: "boolean" })
+    .notNull()
+    .default(false),
   joinedAt: integer("joined_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
+});
+
+export const roomJoinRequests = sqliteTable("room_join_requests", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => rooms.id, { onDelete: "cascade" }),
+  username: text("username").notNull(),
+  browserName: text("browser_name"),
+  browserVersion: text("browser_version"),
+  status: text("status").notNull().default("pending"), // pending, approved, rejected
+  requestedAt: integer("requested_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  respondedAt: integer("responded_at", { mode: "timestamp" }),
 });
 
 export const mediaFiles = sqliteTable("media_files", {

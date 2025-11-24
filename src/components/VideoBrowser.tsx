@@ -25,6 +25,7 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchMediaFiles();
@@ -102,17 +103,18 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
           onClick={() => handleSelectVideo(file)}
         >
           <div className="aspect-video bg-black/50 flex items-center justify-center overflow-hidden relative">
-            {file.posterUrl ? (
+            {file.posterUrl && !failedImages.has(file.id) ? (
               <img
                 src={file.posterUrl}
                 alt={file.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
+                onError={() => {
+                  console.error("Failed to load poster:", file.posterUrl);
+                  setFailedImages((prev) => new Set([...prev, file.id]));
                 }}
+                crossOrigin="anonymous"
               />
-            ) : null}
-            {!file.posterUrl && (
+            ) : (
               <Film className="h-8 w-8 text-muted-foreground" />
             )}
           </div>

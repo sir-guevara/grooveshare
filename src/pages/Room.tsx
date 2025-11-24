@@ -7,6 +7,7 @@ import { Play, Pause, Volume2, Subtitles, Users, Copy, Check, Maximize, Upload, 
 import { useToast } from "@/hooks/use-toast";
 import { useRoomWebSocket } from "@/hooks/useRoomWebSocket";
 import VideoBrowser from "@/components/VideoBrowser";
+import JoinRequestsPanel from "@/components/JoinRequestsPanel";
 import { api } from "@/lib/api";
 
 interface RoomData {
@@ -21,6 +22,7 @@ interface RoomData {
 interface Participant {
   id: string;
   username: string;
+  isHost?: boolean;
 }
 
 const mapRoom = (data: any): RoomData => ({
@@ -61,6 +63,7 @@ const Room = () => {
   const [copied, setCopied] = useState(false);
   const [localVideoUrl, setLocalVideoUrl] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isHost, setIsHost] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [username, setUsername] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -166,6 +169,13 @@ const Room = () => {
         const data = await api.getRoomWithParticipants(code);
         setRoom(mapRoom(data.room));
         setParticipants(data.participants);
+
+        // Check if current user is the host
+        const currentUserIsHost = data.participants.some(
+          (p: Participant) => p.username === username && p.isHost
+        );
+        setIsHost(currentUserIsHost);
+
         setIsLoading(false);
       } catch (error) {
         toast({
@@ -178,7 +188,7 @@ const Room = () => {
     };
 
     fetchRoom();
-  }, [code, navigate, toast]);
+  }, [code, navigate, toast, username]);
 
   // Handle video source changes
   useEffect(() => {
@@ -216,7 +226,7 @@ const Room = () => {
       playback_position: updates.playback_position,
       is_playing: updates.is_playing,
       subtitle_enabled: updates.subtitle_enabled,
-    });
+    }, username);
   };
 
   const handlePlayPause = async () => {
@@ -406,7 +416,8 @@ const Room = () => {
               </div>
             )}
 
-            {/* Video Controls Overlay */}
+            {/* Video Controls Overlay - Only for Host */}
+            {isHost && (
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -445,9 +456,11 @@ const Room = () => {
                 </Button>
               </div>
             </div>
+            )}
           </div>
 
-          {/* Video Source Selection */}
+          {/* Video Source Selection - Only for Host */}
+          {isHost && (
           <div className="backdrop-blur-glass bg-card/60 rounded-xl p-6 border border-border/50">
             <Tabs defaultValue="library" className="w-full">
               <TabsList className="w-full grid grid-cols-2">
@@ -509,6 +522,10 @@ const Room = () => {
               </TabsContent>
             </Tabs>
           </div>
+          )}
+
+          {/* Join Requests - Only for Host */}
+          {isHost && <JoinRequestsPanel roomCode={room.code} />}
 
           {/* Participants */}
           <div className="backdrop-blur-glass bg-card/60 rounded-xl p-6 border border-border/50">
