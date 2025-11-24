@@ -610,7 +610,7 @@ app.post(
 // Update media metadata
 app.put(`${apiBase}/media/:id`, authMiddleware, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { title, description } = req.body;
+  const { title, description, file_url } = req.body;
 
   const file =
     db.select().from(mediaFiles).where(eq(mediaFiles.id, id)).all()[0] ?? null;
@@ -622,6 +622,7 @@ app.put(`${apiBase}/media/:id`, authMiddleware, requireAdmin, (req, res) => {
   const updates: any = {};
   if (title !== undefined) updates.title = title.trim();
   if (description !== undefined) updates.description = description?.trim() || null;
+  if (file_url !== undefined) updates.file_url = file_url.trim();
 
   db.update(mediaFiles)
     .set({ ...updates, updatedAt: new Date() })

@@ -184,12 +184,16 @@ const MediaLibrary = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleEditSave = async (title: string, description: string) => {
+  const handleEditSave = async (title: string, description: string, file_url?: string) => {
     if (!editingMedia) return;
 
     setIsEditLoading(true);
     try {
-      await api.updateMedia(editingMedia.id, { title, description });
+      const payload: any = { title, description };
+      if (file_url) {
+        payload.file_url = file_url;
+      }
+      await api.updateMedia(editingMedia.id, payload);
 
       toast({
         title: "Updated",

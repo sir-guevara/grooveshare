@@ -178,7 +178,7 @@ export const api = {
   async deleteMedia(id: string) {
     return request<{ success: boolean }>(`/media/${id}`, { method: "DELETE" });
   },
-  async updateMedia(id: string, payload: { title?: string; description?: string }) {
+  async updateMedia(id: string, payload: { title?: string; description?: string; file_url?: string }) {
     return request<{ media: any }>(`/media/${id}`, {
       method: "PUT",
       body: payload,
