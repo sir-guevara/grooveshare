@@ -476,7 +476,19 @@ const Room = () => {
 
               <TabsContent value="library" className="mt-4">
                 <h3 className="text-lg font-semibold mb-4">Choose from Library</h3>
-                <VideoBrowser roomId={room.code} onVideoSelected={() => {}} username={username} />
+                <VideoBrowser
+                  roomId={room.code}
+                  onVideoSelected={async () => {
+                    // Refresh room state to get the updated video_url
+                    try {
+                      const data = await api.getRoomWithParticipants(code);
+                      setRoom(mapRoom(data.room));
+                    } catch (error) {
+                      console.error("Failed to refresh room state:", error);
+                    }
+                  }}
+                  username={username}
+                />
               </TabsContent>
 
               <TabsContent value="manual" className="mt-4">
