@@ -178,6 +178,17 @@ export const api = {
   async deleteMedia(id: string) {
     return request<{ success: boolean }>(`/media/${id}`, { method: "DELETE" });
   },
+  async updateMedia(id: string, payload: { title?: string; description?: string }) {
+    return request<{ media: any }>(`/media/${id}`, {
+      method: "PUT",
+      body: payload,
+    });
+  },
+  async resyncMediaOMDB(id: string) {
+    return request<{ media: any }>(`/media/${id}/resync-omdb`, {
+      method: "POST",
+    });
+  },
   async getJoinRequests(code: string) {
     return request<{ requests: any[] }>(`/rooms/${code}/join-requests`, {
       method: "GET",

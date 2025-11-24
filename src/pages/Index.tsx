@@ -25,6 +25,7 @@ const Index = () => {
     try {
       const { user } = await api.currentUser();
       setIsLoggedIn(true);
+      setUsername(user.username || "");
       setIsAdmin(user.roles?.includes("admin"));
     } catch (error) {
       setIsLoggedIn(false);
@@ -239,16 +240,25 @@ const Index = () => {
                 joinRoom();
               }}
             >
-              <div className="space-y-2">
-                <label className="text-xs sm:text-sm font-medium text-foreground">Your Name</label>
-                <Input
-                  type="text"
-                  placeholder="Enter your name"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="bg-input border-border focus:border-accent text-sm"
-                />
-              </div>
+              {isLoggedIn ? (
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium text-foreground">Your Name</label>
+                  <div className="px-3 py-2 bg-input border border-border rounded-md text-sm text-foreground">
+                    {username}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-xs sm:text-sm font-medium text-foreground">Your Name</label>
+                  <Input
+                    type="text"
+                    placeholder="Enter your name"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="bg-input border-border focus:border-accent text-sm"
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <label className="text-xs sm:text-sm font-medium text-foreground">Room Code</label>
                 <Input
@@ -284,16 +294,25 @@ const Index = () => {
             </div>
 
             {/* Username Input */}
-            <div className="space-y-2">
-              <label className="text-xs sm:text-sm font-medium text-foreground">Your Name</label>
-              <Input
-                type="text"
-                placeholder="Enter your name"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="bg-input border-border focus:border-primary text-sm"
-              />
-            </div>
+            {isLoggedIn ? (
+              <div className="space-y-2">
+                <label className="text-xs sm:text-sm font-medium text-foreground">Your Name</label>
+                <div className="px-3 py-2 bg-input border border-border rounded-md text-sm text-foreground">
+                  {username}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-xs sm:text-sm font-medium text-foreground">Your Name</label>
+                <Input
+                  type="text"
+                  placeholder="Enter your name"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="bg-input border-border focus:border-primary text-sm"
+                />
+              </div>
+            )}
 
             {/* Create Room Button */}
             <Button

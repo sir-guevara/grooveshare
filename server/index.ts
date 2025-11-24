@@ -495,8 +495,9 @@ app.put(`${apiBase}/rooms/:id`, (req, res) => {
     subtitle_enabled?: boolean;
   } = req.body ?? {};
 
+  // Look up room by code (id parameter is the room code)
   const room =
-    db.select().from(rooms).where(eq(rooms.id, id)).all()[0] ?? null;
+    db.select().from(rooms).where(eq(rooms.code, id)).all()[0] ?? null;
 
   if (!room) return res.status(404).json({ error: "Room not found" });
 
@@ -504,7 +505,7 @@ app.put(`${apiBase}/rooms/:id`, (req, res) => {
   const participant = db
     .select()
     .from(roomParticipants)
-    .where(eq(roomParticipants.roomId, id))
+    .where(eq(roomParticipants.roomId, room.id))
     .all()
     .find((p) => p.username === username && p.isHost);
 
@@ -524,10 +525,10 @@ app.put(`${apiBase}/rooms/:id`, (req, res) => {
   if (typeof updates.subtitle_enabled === "boolean")
     payload.subtitleEnabled = updates.subtitle_enabled;
 
-  db.update(rooms).set(payload).where(eq(rooms.id, id)).run();
+  db.update(rooms).set(payload).where(eq(rooms.id, room.id)).run();
 
   const refreshed =
-    db.select().from(rooms).where(eq(rooms.id, id)).all()[0] ?? null;
+    db.select().from(rooms).where(eq(rooms.id, room.id)).all()[0] ?? null;
 
   return res.json({ room: refreshed });
 });
@@ -605,6 +606,81 @@ app.post(
     return res.json({ fileUrl, metadata });
   }
 );
+
+// Update media metadata
+app.put(`${apiBase}/media/:id`, authMiddleware, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { title, description } = req.body;
+
+  const file =
+    db.select().from(mediaFiles).where(eq(mediaFiles.id, id)).all()[0] ?? null;
+
+  if (!file) {
+    return res.status(404).json({ error: "Media not found" });
+  }
+
+  const updates: any = {};
+  if (title !== undefined) updates.title = title.trim();
+  if (description !== undefined) updates.description = description?.trim() || null;
+
+  db.update(mediaFiles)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(mediaFiles.id, id))
+    .run();
+
+  const updated = db.select().from(mediaFiles).where(eq(mediaFiles.id, id)).all()[0];
+  return res.json({ media: updated });
+});
+
+// Resync OMDB metadata for a media file
+app.post(`${apiBase}/media/:id/resync-omdb`, authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  const file =
+    db.select().from(mediaFiles).where(eq(mediaFiles.id, id)).all()[0] ?? null;
+
+  if (!file) {
+    return res.status(404).json({ error: "Media not found" });
+  }
+
+  try {
+    // Fetch fresh metadata from OMDB
+    const metadata = await fetchOmdbMetadata(file.title);
+
+    if (!metadata) {
+      return res.status(400).json({ error: "Could not fetch OMDB data for this title" });
+    }
+
+    // Cache new poster if available
+    let cachedPosterUrl = file.posterUrl;
+    if (metadata.posterUrl && metadata.posterUrl !== file.posterUrl) {
+      cachedPosterUrl = await cachePosterImage(metadata.posterUrl, id);
+    }
+
+    // Update media with new metadata
+    db.update(mediaFiles)
+      .set({
+        description: metadata.description || file.description,
+        externalApiUrl: metadata.externalApiUrl || file.externalApiUrl,
+        posterUrl: cachedPosterUrl || metadata.posterUrl,
+        imdbId: metadata.imdbId || file.imdbId,
+        releaseYear: metadata.releaseYear || file.releaseYear,
+        rating: metadata.rating || file.rating,
+        genre: metadata.genre || file.genre,
+        director: metadata.director || file.director,
+        actors: metadata.actors || file.actors,
+        updatedAt: new Date(),
+      })
+      .where(eq(mediaFiles.id, id))
+      .run();
+
+    const updated = db.select().from(mediaFiles).where(eq(mediaFiles.id, id)).all()[0];
+    return res.json({ media: updated });
+  } catch (error) {
+    console.error("Error resyncing OMDB metadata:", error);
+    return res.status(500).json({ error: "Failed to resync OMDB metadata" });
+  }
+});
 
 app.delete(`${apiBase}/media/:id`, authMiddleware, requireAdmin, (req, res) => {
   const { id } = req.params;

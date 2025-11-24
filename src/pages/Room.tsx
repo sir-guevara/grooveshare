@@ -163,7 +163,7 @@ const Room = () => {
   // Initial room fetch
   useEffect(() => {
     const fetchRoom = async () => {
-      if (!code) return;
+      if (!code || !username) return;
 
       try {
         const data = await api.getRoomWithParticipants(code);
@@ -476,7 +476,7 @@ const Room = () => {
 
               <TabsContent value="library" className="mt-4">
                 <h3 className="text-lg font-semibold mb-4">Choose from Library</h3>
-                <VideoBrowser roomId={room.id} onVideoSelected={() => {}} />
+                <VideoBrowser roomId={room.code} onVideoSelected={() => {}} username={username} />
               </TabsContent>
 
               <TabsContent value="manual" className="mt-4">

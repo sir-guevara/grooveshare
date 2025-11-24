@@ -18,9 +18,10 @@ interface MediaFile {
 interface VideoBrowserProps {
   roomId: string;
   onVideoSelected: () => void;
+  username?: string;
 }
 
-const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
+const VideoBrowser = ({ roomId, onVideoSelected, username }: VideoBrowserProps) => {
   const { toast } = useToast();
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +35,7 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
   const fetchMediaFiles = async () => {
     try {
       const { media } = await api.listMedia();
+      console.log("Fetched media files:", media);
       setMediaFiles(
         media.map((file: any) => ({
           ...file,
@@ -42,6 +44,8 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
           posterUrl: file.posterUrl ?? file.poster_url ?? null,
         }))
       );
+    } catch (error) {
+      console.error("Error fetching media files:", error);
     } finally {
       setLoading(false);
     }
@@ -55,7 +59,7 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
         video_url: file.file_url,
         playback_position: 0,
         is_playing: false,
-      });
+      }, username);
 
       toast({
         title: "Video selected!",
@@ -64,9 +68,10 @@ const VideoBrowser = ({ roomId, onVideoSelected }: VideoBrowserProps) => {
 
       onVideoSelected();
     } catch (error) {
+      console.error("Error selecting video:", error);
       toast({
         title: "Failed to set video",
-        description: "Please try again.",
+        description: error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
       });
     } finally {

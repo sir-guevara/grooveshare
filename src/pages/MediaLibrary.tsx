@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Trash2, Film, ArrowLeft } from "lucide-react";
+import { Upload, Trash2, Film, ArrowLeft, Edit2, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import { MediaEditModal } from "@/components/MediaEditModal";
 
 interface MediaFile {
   id: string;
@@ -32,7 +33,7 @@ const MediaLibrary = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -48,6 +49,11 @@ const MediaLibrary = () => {
     title: "",
     description: "",
   });
+
+  const [editingMedia, setEditingMedia] = useState<MediaFile | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isEditLoading, setIsEditLoading] = useState(false);
+  const [resyncing, setResyncing] = useState<string | null>(null);
 
   useEffect(() => {
     checkAdminAndFetchFiles();
@@ -170,6 +176,57 @@ const MediaLibrary = () => {
         description: "Failed to delete video.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleEditClick = (media: MediaFile) => {
+    setEditingMedia(media);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSave = async (title: string, description: string) => {
+    if (!editingMedia) return;
+
+    setIsEditLoading(true);
+    try {
+      await api.updateMedia(editingMedia.id, { title, description });
+
+      toast({
+        title: "Updated",
+        description: "Media information has been updated.",
+      });
+
+      await fetchMediaFiles();
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: "Failed to update media.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  const handleResyncOMDB = async (id: string) => {
+    setResyncing(id);
+    try {
+      await api.resyncMediaOMDB(id);
+
+      toast({
+        title: "Resynced",
+        description: "OMDB metadata has been updated.",
+      });
+
+      await fetchMediaFiles();
+    } catch (error) {
+      toast({
+        title: "Resync failed",
+        description: "Failed to resync OMDB metadata.",
+        variant: "destructive",
+      });
+    } finally {
+      setResyncing(null);
     }
   };
 
@@ -346,6 +403,28 @@ const MediaLibrary = () => {
                         </a>
                       )}
 
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditClick(file)}
+                          className="flex-1"
+                        >
+                          <Edit2 className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResyncOMDB(file.id)}
+                          disabled={resyncing === file.id}
+                          className="flex-1"
+                        >
+                          <RefreshCw className={`h-4 w-4 mr-2 ${resyncing === file.id ? "animate-spin" : ""}`} />
+                          {resyncing === file.id ? "Syncing..." : "Resync"}
+                        </Button>
+                      </div>
+
                       <Button
                         variant="destructive"
                         size="sm"
@@ -362,6 +441,18 @@ const MediaLibrary = () => {
             )}
           </div>
         </div>
+
+        {/* Edit Modal */}
+        <MediaEditModal
+          isOpen={isEditModalOpen}
+          media={editingMedia}
+          isLoading={isEditLoading}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingMedia(null);
+          }}
+          onSave={handleEditSave}
+        />
       </div>
     </div>
   );
