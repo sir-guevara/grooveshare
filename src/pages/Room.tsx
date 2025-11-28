@@ -3,12 +3,18 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Pause, Volume2, Subtitles, Users, Copy, Check, Maximize, Upload, Library } from "lucide-react";
+import { Play, Pause, Volume2, Subtitles, Users, Copy, Check, Maximize, Upload, Library, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useRoomWebSocket } from "@/hooks/useRoomWebSocket";
 import VideoBrowser from "@/components/VideoBrowser";
 import JoinRequestsPanel from "@/components/JoinRequestsPanel";
+import { JoinRoomModal } from "@/components/JoinRoomModal";
+import { LobbyManagementPanel } from "@/components/LobbyManagementPanel";
 import { api } from "@/lib/api";
+import { getPersistentBrowserFingerprint } from "@/lib/browserFingerprint";
+import { Home } from "lucide-react";
+import { detectBrowser } from "@/lib/browser-detect";
+
 
 interface RoomData {
   id: string;
@@ -22,7 +28,9 @@ interface RoomData {
 interface Participant {
   id: string;
   username: string;
+  userId: string;
   isHost?: boolean;
+  status?: string;
 }
 
 const mapRoom = (data: any): RoomData => ({
@@ -66,6 +74,13 @@ const Room = () => {
   const [isHost, setIsHost] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [username, setUsername] = useState<string>("");
+  const [userId, setUserId] = useState<string>("");
+  const [hasJoined, setHasJoined] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  const [approvalStatus, setApprovalStatus] = useState<"pending" | "approved" | "rejected" | "active">("pending");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isSyncingRef = useRef(false);
 
@@ -74,10 +89,23 @@ const Room = () => {
       try {
         const { user } = await api.currentUser();
         setIsAdmin(user.roles?.includes("admin"));
-        setUsername(user.username || "Anonymous");
+        setUsername(user.username || "");
+        setIsLoggedIn(true);
+        setHasJoined(true); // Logged-in users are automatically joined
+        // For logged-in users, reuse any stored userId from when the room was created
+        const storedUserId = localStorage.getItem("userId");
+        if (storedUserId) {
+          setUserId(storedUserId);
+        }
       } catch {
         setIsAdmin(false);
-        setUsername("Anonymous");
+        // Check if there's a pending username in localStorage (for non-logged-in users)
+        const pendingUsername = localStorage.getItem("pendingUsername");
+        const storedUserId = localStorage.getItem("userId");
+        setUsername(pendingUsername || "");
+        setUserId(storedUserId || "");
+        setIsLoggedIn(false);
+        setHasJoined(false); // Not logged in, need to join via modal
       }
     };
     checkAdmin();
@@ -144,37 +172,128 @@ const Room = () => {
     });
   };
 
-  const handleUserLeft = (leftUsername: string) => {
+  const handleUserLeft = async (leftUsername: string) => {
     toast({
       title: "User left",
       description: `${leftUsername} left the room.`,
     });
+
+    // Update participant status to "left" in the database
+    if (code) {
+      try {
+        await api.updateParticipantStatus(code, leftUsername, "left");
+      } catch (error) {
+        console.error("Failed to update participant status:", error);
+      }
+    }
+  };
+
+  const handleApprovalStatusChange = (status: "pending" | "approved" | "rejected" | "active") => {
+    setApprovalStatus(status);
+
+    if (status === "active") {
+      // User was approved, redirect to room
+      setIsApproved(true);
+      toast({
+        title: "Approved!",
+        description: "You've been approved to join the room.",
+      });
+    } else if (status === "rejected") {
+      // User was rejected, redirect to home
+      toast({
+        title: "Request Rejected",
+        description: "The host declined your request.",
+        variant: "destructive",
+      });
+      setTimeout(() => {
+        localStorage.removeItem("pendingUsername");
+        localStorage.removeItem("userId");
+        navigate("/");
+      }, 2000);
+    }
   };
 
   const { sendRoomUpdate, sendSeek } = useRoomWebSocket(
     code,
+    userId,
     username,
     handleRoomUpdate,
     handleSeek,
     handleUserJoined,
-    handleUserLeft
+    handleUserLeft,
+    handleApprovalStatusChange
   );
 
   // Initial room fetch
   useEffect(() => {
     const fetchRoom = async () => {
-      if (!code || !username) return;
+      if (!code) return;
 
       try {
         const data = await api.getRoomWithParticipants(code);
         setRoom(mapRoom(data.room));
         setParticipants(data.participants);
 
-        // Check if current user is the host
-        const currentUserIsHost = data.participants.some(
-          (p: Participant) => p.username === username && p.isHost
-        );
-        setIsHost(currentUserIsHost);
+        let userIsApproved = false;
+
+        // Check if current user is approved (in active participants)
+        if (username || userId) {
+          const participantsList = data.participants as Participant[];
+
+          const matchingParticipant = participantsList.find((p: Participant) =>
+            userId ? p.userId === userId : p.username === username
+          );
+
+          if (matchingParticipant) {
+            // For guests, keep the in-memory name/id aligned with the record we
+            // found in the room so host/approval logic survives reloads.
+            if (!isLoggedIn && matchingParticipant.username && username !== matchingParticipant.username) {
+              setUsername(matchingParticipant.username);
+              try {
+                localStorage.setItem("pendingUsername", matchingParticipant.username);
+              } catch {
+                // ignore
+              }
+            }
+
+            if (!userId && matchingParticipant.userId) {
+              setUserId(matchingParticipant.userId);
+              try {
+                localStorage.setItem("userId", matchingParticipant.userId);
+              } catch {
+                // ignore
+              }
+            }
+          }
+
+          userIsApproved = Boolean(matchingParticipant);
+
+          if (!userIsApproved && !isLoggedIn) {
+            // User is not approved, redirect to lobby
+            navigate(`/lobby/${code}`);
+            return;
+          }
+
+          setIsApproved(userIsApproved);
+
+          // Check if current user is the host
+          const currentUserIsHost = participantsList.some((p: Participant) =>
+            userId ? p.userId === userId && p.isHost : p.username === username && p.isHost
+          );
+          setIsHost(currentUserIsHost);
+
+          // If the user is already an active participant, mark them as joined
+          if (userIsApproved && !hasJoined) {
+            setHasJoined(true);
+          }
+        }
+
+        // If not logged in, not joined, and not already approved, show join modal
+        if (!isLoggedIn && !hasJoined && !userIsApproved) {
+          setShowJoinModal(true);
+          setIsLoading(false);
+          return;
+        }
 
         setIsLoading(false);
       } catch (error) {
@@ -188,7 +307,7 @@ const Room = () => {
     };
 
     fetchRoom();
-  }, [code, navigate, toast, username]);
+  }, [code, navigate, toast, isLoggedIn, hasJoined, username, userId]);
 
   // Handle video source changes
   useEffect(() => {
@@ -198,6 +317,65 @@ const Room = () => {
     videoRef.current.load();
     console.log("Video source changed, reloading:", room.video_url);
   }, [room?.video_url]);
+
+  // Cleanup: Mark user as left when they leave the room
+  useEffect(() => {
+    return () => {
+      if (code && username && isApproved) {
+        // Mark user as left when component unmounts
+        api.updateParticipantStatus(code, username, "left").catch((error) => {
+          console.error("Failed to mark user as left:", error);
+        });
+      }
+    };
+  }, [code, username, isApproved]);
+
+  const handleJoinRoom = async (joinUsername: string) => {
+    if (!code) return;
+
+    setIsJoiningRoom(true);
+    try {
+      const browser = detectBrowser();
+      const browserFingerprint = getPersistentBrowserFingerprint();
+
+      const result = await api.joinRoom(
+        code,
+        joinUsername,
+        browser.name,
+        browser.version,
+        browserFingerprint
+      );
+
+      if (result?.userId) {
+        localStorage.setItem("userId", result.userId);
+      }
+
+      setUsername(joinUsername);
+      setHasJoined(true);
+      setShowJoinModal(false);
+
+      // Store pending join info for the lobby flow
+      localStorage.setItem("pendingRoomCode", code);
+      localStorage.setItem("pendingUsername", joinUsername);
+
+      toast({
+        title: "Join request sent",
+        description: "Waiting for host approval...",
+      });
+
+      // Redirect to lobby to wait for approval
+      navigate(`/lobby/${code}`);
+    } catch (error) {
+      console.error("Error sending join request:", error);
+      toast({
+        title: "Failed to join room",
+        description: "Something went wrong while sending your join request.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsJoiningRoom(false);
+    }
+  };
 
   const updateRoomState = async (updates: Partial<RoomData>) => {
     if (!room) return;
@@ -221,12 +399,17 @@ const Room = () => {
     });
 
     // Also update on server for persistence
-    await api.updateRoom(room.id, {
-      video_url: updates.video_url,
-      playback_position: updates.playback_position,
-      is_playing: updates.is_playing,
-      subtitle_enabled: updates.subtitle_enabled,
-    }, username);
+    await api.updateRoom(
+      room.id,
+      {
+        video_url: updates.video_url,
+        playback_position: updates.playback_position,
+        is_playing: updates.is_playing,
+        subtitle_enabled: updates.subtitle_enabled,
+      },
+      username,
+      userId
+    );
   };
 
   const handlePlayPause = async () => {
@@ -271,10 +454,10 @@ const Room = () => {
   const handleSetVideo = async () => {
     if (!room || !localVideoUrl.trim()) return;
 
-    await updateRoomState({ 
+    await updateRoomState({
       video_url: localVideoUrl,
       playback_position: 0,
-      is_playing: false 
+      is_playing: false
     });
 
     toast({
@@ -287,7 +470,7 @@ const Room = () => {
     navigator.clipboard.writeText(code || "");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    
+
     toast({
       title: "Room code copied!",
       description: "Share this code with friends to watch together.",
@@ -344,6 +527,20 @@ const Room = () => {
     );
   }
 
+  // Show join modal if user hasn't joined yet
+  if (!hasJoined && !isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+        <JoinRoomModal
+          isOpen={showJoinModal}
+          roomCode={code || ""}
+          onJoin={handleJoinRoom}
+          isLoading={isJoiningRoom}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-hero">
       {/* Header */}
@@ -356,7 +553,7 @@ const Room = () => {
               className="h-12 w-auto rounded-md"
             />
             <Badge
-              variant="secondary" 
+              variant="secondary"
               className="cursor-pointer hover:bg-secondary/80 transition-all"
               onClick={copyRoomCode}
             >
@@ -370,6 +567,16 @@ const Room = () => {
               <Users className="h-4 w-4" />
               {participants.length}
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/")}
+              className="gap-2"
+              title="Go to home"
+            >
+              <Home className="h-4 w-4" />
+              Home
+            </Button>
           </div>
         </div>
       </header>
@@ -463,14 +670,18 @@ const Room = () => {
           {isHost && (
           <div className="backdrop-blur-glass bg-card/60 rounded-xl p-6 border border-border/50">
             <Tabs defaultValue="library" className="w-full">
-              <TabsList className="w-full grid grid-cols-2">
+              <TabsList className="w-full grid grid-cols-3">
                 <TabsTrigger value="library" className="gap-2">
                   <Library className="h-4 w-4" />
-                  Video Library
+                  <span className="hidden sm:inline">Video Library</span>
                 </TabsTrigger>
                 <TabsTrigger value="manual" className="gap-2">
                   <Upload className="h-4 w-4" />
-                  Manual Upload
+                  <span className="hidden sm:inline">Manual Upload</span>
+                </TabsTrigger>
+                <TabsTrigger value="lobby" className="gap-2">
+                  <Shield className="h-4 w-4" />
+                  <span className="hidden sm:inline">Lobby</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -493,7 +704,7 @@ const Room = () => {
 
               <TabsContent value="manual" className="mt-4">
                 <h3 className="text-lg font-semibold mb-4">Upload or Enter URL</h3>
-                
+
                 {isAdmin && (
                   <div className="mb-4">
                     <input
@@ -531,6 +742,10 @@ const Room = () => {
                   {isAdmin ? "Upload a video file or enter a URL. " : ""}
                   Anyone in the room can set the video. Supports MP4, MKV, WebM, and more.
                 </p>
+              </TabsContent>
+
+              <TabsContent value="lobby" className="mt-4">
+                {room && <LobbyManagementPanel roomCode={room.code} />}
               </TabsContent>
             </Tabs>
           </div>

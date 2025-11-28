@@ -36,18 +36,23 @@ export const ensureDatabase = () => {
     CREATE TABLE IF NOT EXISTS room_participants (
       id TEXT PRIMARY KEY,
       room_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
       username TEXT NOT NULL,
       is_host INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
       joined_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      left_at INTEGER,
       FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS room_join_requests (
       id TEXT PRIMARY KEY,
       room_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
       username TEXT NOT NULL,
       browser_name TEXT,
       browser_version TEXT,
+      ip_address TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       requested_at INTEGER NOT NULL DEFAULT (unixepoch()),
       responded_at INTEGER,

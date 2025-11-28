@@ -189,10 +189,11 @@ const MediaLibrary = () => {
 
     setIsEditLoading(true);
     try {
-      const payload: any = { title, description };
-      if (file_url) {
-        payload.file_url = file_url;
-      }
+      const payload: any = {
+        title,
+        description,
+        file_url: file_url || ""
+      };
       await api.updateMedia(editingMedia.id, payload);
 
       toast({
@@ -224,9 +225,11 @@ const MediaLibrary = () => {
 
       await fetchMediaFiles();
     } catch (error) {
+      console.error("OMDB resync error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to resync OMDB metadata.";
       toast({
         title: "Resync failed",
-        description: "Failed to resync OMDB metadata.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

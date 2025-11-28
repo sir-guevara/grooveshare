@@ -3,63 +3,70 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Clock, CheckCircle, XCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { useRoomWebSocket } from "@/hooks/useRoomWebSocket";
 
 const Lobby = () => {
   const { code } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
+  const [status, setStatus] = useState<"pending" | "approved" | "rejected" | "active">("pending");
   const [username, setUsername] = useState("");
-  const [isChecking, setIsChecking] = useState(false);
+  const [userId, setUserId] = useState("");
 
   useEffect(() => {
     const storedUsername = localStorage.getItem("pendingUsername");
-    if (storedUsername) {
-      setUsername(storedUsername);
+    const storedUserId = localStorage.getItem("userId");
+
+    if (!storedUsername || !storedUserId || !code) {
+      // No pending request context – send the user home
+      navigate("/");
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    if (!code || status !== "pending") return;
+    setUsername(storedUsername);
+    setUserId(storedUserId);
+  }, [code, navigate]);
 
-    const checkStatus = async () => {
-      setIsChecking(true);
-      try {
-        const result = await api.getJoinRequests(code);
-        const request = result.requests.find((r: any) => r.username === username);
-
-        if (request) {
-          if (request.status === "approved") {
-            setStatus("approved");
-            toast({
-              title: "Approved!",
-              description: "You've been approved to join the room.",
-            });
-            setTimeout(() => {
-              localStorage.removeItem("pendingRoomCode");
-              localStorage.removeItem("pendingUsername");
-              navigate(`/room/${code}`);
-            }, 1500);
-          } else if (request.status === "rejected") {
-            setStatus("rejected");
-            toast({
-              title: "Request Rejected",
-              description: "The host declined your request.",
-              variant: "destructive",
-            });
-          }
+  const handleApprovalStatusChange = (
+    newStatus: "pending" | "approved" | "rejected" | "active"
+  ) => {
+    if (newStatus === "active") {
+      setStatus("approved");
+      toast({
+        title: "Approved!",
+        description: "You've been approved to join the room.",
+      });
+      // Clear pending room code but keep username/userId for the room
+      localStorage.removeItem("pendingRoomCode");
+      setTimeout(() => {
+        if (code) {
+          navigate(`/room/${code}`);
         }
-      } catch (error) {
-        console.error("Error checking status:", error);
-      } finally {
-        setIsChecking(false);
-      }
-    };
+      }, 1000);
+    } else if (newStatus === "rejected") {
+      setStatus("rejected");
+      toast({
+        title: "Request Rejected",
+        description: "The host declined your request.",
+        variant: "destructive",
+      });
+      localStorage.removeItem("pendingRoomCode");
+      localStorage.removeItem("pendingUsername");
+    } else {
+      setStatus(newStatus);
+    }
+  };
 
-    const interval = setInterval(checkStatus, 2000);
-    return () => clearInterval(interval);
-  }, [code, username, status, navigate, toast]);
+  useRoomWebSocket(
+    code || "",
+    userId,
+    username,
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    handleApprovalStatusChange
+  );
 
   return (
     <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-3 sm:p-4">

@@ -21,6 +21,7 @@ import {
   users,
 } from "./db/schema";
 import { fetchOmdbMetadata, cachePosterImage } from "./utils/omdb";
+import { generateUserId, getClientIp } from "./utils/userIdGenerator";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -292,7 +293,7 @@ app.get(`${apiBase}/auth/me`, authMiddleware, (req: AuthenticatedRequest, res) =
 });
 
 app.post(`${apiBase}/rooms`, (req, res) => {
-  const { username } = req.body;
+  const { username, browserFingerprint } = req.body;
   if (!username?.trim()) {
     return res.status(400).json({ error: "Username is required" });
   }
@@ -309,6 +310,8 @@ app.post(`${apiBase}/rooms`, (req, res) => {
 
   const roomId = randomUUID();
   const now = new Date();
+  const ipAddress = getClientIp(req);
+  const userId = generateUserId(ipAddress, browserFingerprint || "unknown");
 
   db.insert(rooms)
     .values({
@@ -326,6 +329,7 @@ app.post(`${apiBase}/rooms`, (req, res) => {
     .values({
       id: randomUUID(),
       roomId,
+      userId,
       username: username.trim(),
       isHost: true,
       joinedAt: now,
@@ -335,11 +339,11 @@ app.post(`${apiBase}/rooms`, (req, res) => {
   const room =
     db.select().from(rooms).where(eq(rooms.id, roomId)).all()[0] ?? null;
 
-  return res.json({ room, code });
+  return res.json({ room, code, userId });
 });
 
 app.post(`${apiBase}/rooms/:code/join`, (req, res) => {
-  const { username, browserName, browserVersion } = req.body;
+  const { username, browserName, browserVersion, browserFingerprint } = req.body;
   const { code } = req.params;
 
   if (!username?.trim()) {
@@ -354,21 +358,25 @@ app.post(`${apiBase}/rooms/:code/join`, (req, res) => {
   }
 
   const now = new Date();
+  const ipAddress = getClientIp(req);
+  const userId = generateUserId(ipAddress, browserFingerprint || "unknown");
 
   // Create a join request instead of directly adding participant
   db.insert(roomJoinRequests)
     .values({
       id: randomUUID(),
       roomId: room.id,
+      userId,
       username: username.trim(),
       browserName: browserName || "Unknown",
       browserVersion: browserVersion || "Unknown",
+      ipAddress,
       status: "pending",
       requestedAt: now,
     })
     .run();
 
-  return res.json({ room, status: "pending", message: "Waiting for host approval" });
+  return res.json({ room, status: "pending", userId, message: "Waiting for host approval" });
 });
 
 // Get pending join requests for a room (host only)
@@ -420,18 +428,39 @@ app.post(`${apiBase}/rooms/:code/join-requests/:requestId/approve`, (req, res) =
     .where(eq(roomJoinRequests.id, requestId))
     .run();
 
-  // Add participant to room
-  db.insert(roomParticipants)
-    .values({
-      id: randomUUID(),
-      roomId: room.id,
-      username: request.username,
-      isHost: false,
-      joinedAt: now,
-    })
-    .run();
+  // Check if participant already exists (e.g., was rejected before)
+  const existingParticipant = db
+    .select()
+    .from(roomParticipants)
+    .where(eq(roomParticipants.roomId, room.id))
+    .all()
+    .find((p) => p.userId === request.userId);
 
-  return res.json({ message: "User approved and added to room" });
+  if (existingParticipant) {
+    // Update existing participant to active
+    db.update(roomParticipants)
+      .set({ status: "active", joinedAt: now })
+      .where(eq(roomParticipants.id, existingParticipant.id))
+      .run();
+  } else {
+    // Add new participant to room
+    db.insert(roomParticipants)
+      .values({
+        id: randomUUID(),
+        roomId: room.id,
+        userId: request.userId,
+        username: request.username,
+        isHost: false,
+        status: "active",
+        joinedAt: now,
+      })
+      .run();
+  }
+
+  // Broadcast approval status to all users in the room
+  broadcastApprovalStatus(code, request.userId, "active");
+
+  return res.json({ message: "User approved and added to room", userId: request.userId });
 });
 
 // Reject a join request (host only)
@@ -463,9 +492,96 @@ app.post(`${apiBase}/rooms/:code/join-requests/:requestId/reject`, (req, res) =>
     .where(eq(roomJoinRequests.id, requestId))
     .run();
 
-  return res.json({ message: "Join request rejected" });
+  // Add/update participant with rejected status
+  const existingParticipant = db
+    .select()
+    .from(roomParticipants)
+    .where(eq(roomParticipants.roomId, room.id))
+    .all()
+    .find((p) => p.userId === request.userId);
+
+  if (existingParticipant) {
+    // Update existing participant to rejected
+    db.update(roomParticipants)
+      .set({ status: "rejected" })
+      .where(eq(roomParticipants.id, existingParticipant.id))
+      .run();
+  } else {
+    // Add new participant with rejected status
+    db.insert(roomParticipants)
+      .values({
+        id: randomUUID(),
+        roomId: room.id,
+        userId: request.userId,
+        username: request.username,
+        isHost: false,
+        status: "rejected",
+        joinedAt: now,
+      })
+      .run();
+  }
+
+  // Broadcast rejection status to all users in the room
+  broadcastApprovalStatus(code, request.userId, "rejected");
+
+  return res.json({ message: "Join request rejected", userId: request.userId });
 });
 
+// More specific routes must come before generic :code route
+// Get all participants including rejected/left (for host lobby management)
+app.get(`${apiBase}/rooms/:code/participants/all`, (req, res) => {
+  const { code } = req.params;
+
+  const room =
+    db.select().from(rooms).where(eq(rooms.code, code)).all()[0] ?? null;
+
+  if (!room) {
+    return res.status(404).json({ error: "Room not found" });
+  }
+
+  // Return all participants with their status
+  const participants = db
+    .select()
+    .from(roomParticipants)
+    .where(eq(roomParticipants.roomId, room.id))
+    .all();
+
+  return res.json({ participants });
+});
+
+// Update participant status (e.g., mark as left)
+app.put(`${apiBase}/rooms/:code/participants/:username/status`, (req, res) => {
+  const { code, username } = req.params;
+  const { status } = req.body;
+
+  const room =
+    db.select().from(rooms).where(eq(rooms.code, code)).all()[0] ?? null;
+
+  if (!room) {
+    return res.status(404).json({ error: "Room not found" });
+  }
+
+  const participant = db
+    .select()
+    .from(roomParticipants)
+    .where(eq(roomParticipants.roomId, room.id))
+    .all()
+    .find((p) => p.username === username);
+
+  if (!participant) {
+    return res.status(404).json({ error: "Participant not found" });
+  }
+
+  const now = new Date();
+  db.update(roomParticipants)
+    .set({ status, leftAt: status === "left" ? now : null })
+    .where(eq(roomParticipants.id, participant.id))
+    .run();
+
+  return res.json({ message: "Participant status updated" });
+});
+
+// Generic room endpoint - must come after specific routes
 app.get(`${apiBase}/rooms/:code`, (req, res) => {
   const { code } = req.params;
 
@@ -476,18 +592,20 @@ app.get(`${apiBase}/rooms/:code`, (req, res) => {
     return res.status(404).json({ error: "Room not found" });
   }
 
+  // Only return active participants
   const participants = db
     .select()
     .from(roomParticipants)
     .where(eq(roomParticipants.roomId, room.id))
-    .all();
+    .all()
+    .filter((p) => p.status === "active");
 
   return res.json({ room, participants });
 });
 
 app.put(`${apiBase}/rooms/:id`, (req, res) => {
   const { id } = req.params;
-  const { username } = req.body;
+  const { username, userId } = req.body as { username?: string; userId?: string };
   const updates: {
     video_url?: string;
     playback_position?: number;
@@ -501,13 +619,23 @@ app.put(`${apiBase}/rooms/:id`, (req, res) => {
 
   if (!room) return res.status(404).json({ error: "Room not found" });
 
-  // Check if user is host
-  const participant = db
+  // Check if user is host. Prefer matching by userId when provided, but fall back
+  // to username so existing clients keep working.
+  const participants = db
     .select()
     .from(roomParticipants)
     .where(eq(roomParticipants.roomId, room.id))
-    .all()
-    .find((p) => p.username === username && p.isHost);
+    .all();
+
+  const participant = participants.find((p) => {
+    const isHost = Boolean(p.isHost);
+    if (!isHost) return false;
+
+    if (userId && p.userId === userId) return true;
+    if (username && p.username === username) return true;
+
+    return false;
+  });
 
   if (!participant) {
     return res.status(403).json({ error: "Only the host can update room state" });
@@ -622,7 +750,7 @@ app.put(`${apiBase}/media/:id`, authMiddleware, requireAdmin, (req, res) => {
   const updates: any = {};
   if (title !== undefined) updates.title = title.trim();
   if (description !== undefined) updates.description = description?.trim() || null;
-  if (file_url !== undefined) updates.file_url = file_url.trim();
+  if (file_url !== undefined) updates.fileUrl = file_url.trim();
 
   db.update(mediaFiles)
     .set({ ...updates, updatedAt: new Date() })
@@ -709,11 +837,14 @@ app.delete(`${apiBase}/media/:id`, authMiddleware, requireAdmin, (req, res) => {
 interface RoomConnection {
   ws: WebSocket;
   roomCode: string;
+  userId: string;
   username: string;
 }
 
 const connections = new Map<WebSocket, RoomConnection>();
 const roomConnections = new Map<string, Set<WebSocket>>();
+const roomCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 
 const broadcastToRoom = (roomCode: string, message: unknown, excludeWs?: WebSocket) => {
   const clients = roomConnections.get(roomCode);
@@ -722,6 +853,23 @@ const broadcastToRoom = (roomCode: string, message: unknown, excludeWs?: WebSock
   const payload = JSON.stringify(message);
   clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN && client !== excludeWs) {
+      client.send(payload);
+    }
+  });
+};
+
+const broadcastApprovalStatus = (roomCode: string, userId: string, status: "approved" | "rejected" | "active") => {
+  const clients = roomConnections.get(roomCode);
+  if (!clients) return;
+
+  const payload = JSON.stringify({
+    type: "approval_status",
+    userId,
+    status,
+  });
+
+  clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
       client.send(payload);
     }
   });
@@ -748,10 +896,10 @@ wss.on("connection", (ws: WebSocket) => {
   ws.on("message", (data: string) => {
     try {
       const message = JSON.parse(data);
-      const { type, roomCode, username, payload } = message;
+      const { type, roomCode, userId, username, payload } = message;
 
       if (type === "join") {
-        const conn: RoomConnection = { ws, roomCode, username };
+        const conn: RoomConnection = { ws, roomCode, userId, username };
         connections.set(ws, conn);
 
         if (!roomConnections.has(roomCode)) {
@@ -759,30 +907,67 @@ wss.on("connection", (ws: WebSocket) => {
         }
         roomConnections.get(roomCode)!.add(ws);
 
-        // Send current room state to the new user
-        const room = db
-          .select()
-          .from(rooms)
-          .where(eq(rooms.code, roomCode))
-          .all()[0];
-
-        if (room) {
-          ws.send(JSON.stringify({
-            type: "room_state",
-            payload: {
-              video_url: room.videoUrl,
-              playback_position: room.playbackPosition,
-              is_playing: room.isPlaying,
-              subtitle_enabled: room.subtitleEnabled,
-            },
-          }));
+        // If there was a pending cleanup timer for this room, cancel it because
+        // someone just (re)joined.
+        const existingTimer = roomCleanupTimers.get(roomCode);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          roomCleanupTimers.delete(roomCode);
         }
 
-        // Broadcast user joined
-        broadcastToRoom(roomCode, {
-          type: "user_joined",
-          username,
-        });
+        // Check user's approval status
+        let userStatus = "pending" as "pending" | "approved" | "rejected" | "active";
+
+        const room =
+          db.select().from(rooms).where(eq(rooms.code, roomCode)).all()[0] ?? null;
+
+        if (room) {
+          const participant = db
+            .select()
+            .from(roomParticipants)
+            .where(eq(roomParticipants.roomId, room.id))
+            .all()
+            .find((p) => p.userId === userId);
+
+          if (participant) {
+            userStatus = participant.status as typeof userStatus;
+          }
+        }
+
+        // Send approval status to the user
+        ws.send(JSON.stringify({
+          type: "approval_status",
+          status: userStatus,
+          userId,
+        }));
+
+        // Send current room state to the new user if approved
+        if (userStatus === "active") {
+          const room = db
+            .select()
+            .from(rooms)
+            .where(eq(rooms.code, roomCode))
+            .all()[0];
+
+          if (room) {
+            ws.send(JSON.stringify({
+              type: "room_state",
+              payload: {
+                video_url: room.videoUrl,
+                playback_position: room.playbackPosition,
+                is_playing: room.isPlaying,
+                subtitle_enabled: room.subtitleEnabled,
+              },
+            }));
+          }
+
+          // Broadcast user joined
+          broadcastToRoom(roomCode, {
+            type: "user_joined",
+            username,
+            userId,
+          });
+        }
       } else if (type === "room_update") {
         const conn = connections.get(ws);
         if (conn) {
@@ -811,19 +996,48 @@ wss.on("connection", (ws: WebSocket) => {
   ws.on("close", () => {
     const conn = connections.get(ws);
     if (conn) {
-      const clients = roomConnections.get(conn.roomCode);
+      const { roomCode, username } = conn;
+      const clients = roomConnections.get(roomCode);
       if (clients) {
         clients.delete(ws);
         if (clients.size === 0) {
-          roomConnections.delete(conn.roomCode);
+          // Schedule room cleanup after a grace period so that quick reloads
+          // don't immediately delete the room while the host/viewers reconnect.
+          const existingTimer = roomCleanupTimers.get(roomCode);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+          }
+
+          const timeout = setTimeout(() => {
+            const currentClients = roomConnections.get(roomCode);
+            if (currentClients && currentClients.size > 0) {
+              // Someone rejoined the room, don't delete it.
+              return;
+            }
+
+            // Remove tracking for this room
+            roomConnections.delete(roomCode);
+            roomCleanupTimers.delete(roomCode);
+
+            // Delete the room itself (participants and join requests are
+            // configured with ON DELETE CASCADE in the schema).
+            const room =
+              db.select().from(rooms).where(eq(rooms.code, roomCode)).all()[0] ?? null;
+            if (room) {
+              db.delete(rooms).where(eq(rooms.id, room.id)).run();
+              console.log(`Deleted empty room with code ${roomCode}`);
+            }
+          }, 60000); // 60 seconds
+
+          roomCleanupTimers.set(roomCode, timeout);
         }
       }
       connections.delete(ws);
 
       // Broadcast user left
-      broadcastToRoom(conn.roomCode, {
+      broadcastToRoom(roomCode, {
         type: "user_left",
-        username: conn.username,
+        username,
       });
     }
   });

@@ -49,13 +49,16 @@ export const roomParticipants = sqliteTable("room_participants", {
   roomId: text("room_id")
     .notNull()
     .references(() => rooms.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(), // Unique ID based on IP + browser
   username: text("username").notNull(),
   isHost: integer("is_host", { mode: "boolean" })
     .notNull()
     .default(false),
+  status: text("status").notNull().default("active"), // active, left, rejected
   joinedAt: integer("joined_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
+  leftAt: integer("left_at", { mode: "timestamp" }),
 });
 
 export const roomJoinRequests = sqliteTable("room_join_requests", {
@@ -63,9 +66,11 @@ export const roomJoinRequests = sqliteTable("room_join_requests", {
   roomId: text("room_id")
     .notNull()
     .references(() => rooms.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(), // Unique ID based on IP + browser
   username: text("username").notNull(),
   browserName: text("browser_name"),
   browserVersion: text("browser_version"),
+  ipAddress: text("ip_address"),
   status: text("status").notNull().default("pending"), // pending, approved, rejected
   requestedAt: integer("requested_at", { mode: "timestamp" })
     .notNull()

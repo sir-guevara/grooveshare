@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Film, Users, Play, Library, LogIn, UserPlus } from "lucide-react";
 import { api } from "@/lib/api";
 import { detectBrowser } from "@/lib/browser-detect";
+import { getPersistentBrowserFingerprint } from "@/lib/browserFingerprint";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -45,7 +46,13 @@ const Index = () => {
 
     setIsCreating(true);
     try {
-      const { code } = await api.createRoom(username.trim());
+      const browserFingerprint = getPersistentBrowserFingerprint();
+      const { code, userId } = await api.createRoom(username.trim(), browserFingerprint);
+
+      // Store userId for later use
+      if (userId) {
+        localStorage.setItem("userId", userId);
+      }
 
       toast({
         title: "Room created!",
@@ -82,7 +89,13 @@ const Index = () => {
 
     try {
       const browser = detectBrowser();
-      const result = await api.joinRoom(normalizedCode, trimmedUsername, browser.name, browser.version);
+      const browserFingerprint = getPersistentBrowserFingerprint();
+      const result = await api.joinRoom(normalizedCode, trimmedUsername, browser.name, browser.version, browserFingerprint);
+
+      // Store userId for later use
+      if (result.userId) {
+        localStorage.setItem("userId", result.userId);
+      }
 
       if (result.status === "pending") {
         toast({
@@ -120,11 +133,17 @@ const Index = () => {
       {/* Header */}
       <header className="backdrop-blur-glass bg-card/60 border-b border-border/50 sticky top-0 z-50">
         <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
-          <img
-            src="/logo.png"
-            alt="GrooveShare logo"
-            className="h-8 sm:h-10 md:h-12 w-auto rounded-md"
-          />
+          <button
+            onClick={() => navigate("/")}
+            className="hover:opacity-80 transition-opacity"
+            aria-label="Go to home"
+          >
+            <img
+              src="/logo.png"
+              alt="GrooveShare logo"
+              className="h-8 sm:h-10 md:h-12 w-auto rounded-md"
+            />
+          </button>
 
           <div className="flex items-center gap-1 sm:gap-2">
             {isLoggedIn ? (
@@ -134,7 +153,7 @@ const Index = () => {
                     variant="outline"
                     onClick={() => navigate("/media")}
                     size="sm"
-                    className="hidden sm:flex text-xs sm:text-sm"
+                    className="text-xs sm:text-sm"
                   >
                     <Library className="h-3 sm:h-4 w-3 sm:w-4 mr-1 sm:mr-2" />
                     <span className="hidden sm:inline">Media Library</span>

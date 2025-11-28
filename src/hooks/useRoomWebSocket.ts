@@ -12,28 +12,32 @@ interface WebSocketMessage {
   payload?: any;
   position?: number;
   username?: string;
+  userId?: string;
+  status?: "pending" | "approved" | "rejected" | "active";
 }
 
 export const useRoomWebSocket = (
   roomCode: string | undefined,
+  userId: string | undefined,
   username: string | undefined,
   onRoomUpdate: (payload: RoomUpdatePayload) => void,
   onSeek: (position: number, username: string) => void,
   onUserJoined: (username: string) => void,
-  onUserLeft: (username: string) => void
+  onUserLeft: (username: string) => void,
+  onApprovalStatusChange?: (status: "pending" | "approved" | "rejected" | "active") => void
 ) => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Store callbacks in refs to avoid dependency issues
-  const callbacksRef = useRef({ onRoomUpdate, onSeek, onUserJoined, onUserLeft });
+  const callbacksRef = useRef({ onRoomUpdate, onSeek, onUserJoined, onUserLeft, onApprovalStatusChange });
 
   useEffect(() => {
-    callbacksRef.current = { onRoomUpdate, onSeek, onUserJoined, onUserLeft };
-  }, [onRoomUpdate, onSeek, onUserJoined, onUserLeft]);
+    callbacksRef.current = { onRoomUpdate, onSeek, onUserJoined, onUserLeft, onApprovalStatusChange };
+  }, [onRoomUpdate, onSeek, onUserJoined, onUserLeft, onApprovalStatusChange]);
 
   const connect = useCallback(() => {
-    if (!roomCode || !username) return;
+    if (!roomCode || !userId || !username) return;
 
     // Don't reconnect if already connected
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -42,8 +46,9 @@ export const useRoomWebSocket = (
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const hostname = window.location.hostname;
-    const port = window.location.port;
-    const wsUrl = `${protocol}//${hostname}${port ? `:${port}` : ""}/ws`;
+    const isDev = window.location.port === "8080";
+    const wsPort = isDev ? "4000" : window.location.port;
+    const wsUrl = `${protocol}//${hostname}${wsPort ? `:${wsPort}` : ""}/ws`;
 
     try {
       wsRef.current = new WebSocket(wsUrl);
@@ -55,6 +60,7 @@ export const useRoomWebSocket = (
           JSON.stringify({
             type: "join",
             roomCode,
+            userId,
             username,
           })
         );
@@ -64,7 +70,12 @@ export const useRoomWebSocket = (
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
 
-          if (message.type === "room_state") {
+          if (message.type === "approval_status") {
+            // User approval status changed
+            if (message.userId === userId && callbacksRef.current.onApprovalStatusChange) {
+              callbacksRef.current.onApprovalStatusChange(message.status || "pending");
+            }
+          } else if (message.type === "room_state") {
             // New user joining - receive current room state
             callbacksRef.current.onRoomUpdate(message.payload);
           } else if (message.type === "room_update") {
@@ -95,7 +106,7 @@ export const useRoomWebSocket = (
     } catch (error) {
       console.error("Failed to create WebSocket:", error);
     }
-  }, [roomCode, username]);
+  }, [roomCode, userId, username]);
 
   const sendRoomUpdate = useCallback((payload: RoomUpdatePayload) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -103,12 +114,13 @@ export const useRoomWebSocket = (
         JSON.stringify({
           type: "room_update",
           roomCode,
+          userId,
           username,
           payload,
         })
       );
     }
-  }, [roomCode, username]);
+  }, [roomCode, userId, username]);
 
   const sendSeek = useCallback((position: number) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -116,15 +128,16 @@ export const useRoomWebSocket = (
         JSON.stringify({
           type: "seek",
           roomCode,
+          userId,
           username,
           payload: { position },
         })
       );
     }
-  }, [roomCode, username]);
+  }, [roomCode, userId, username]);
 
   useEffect(() => {
-    if (!roomCode || !username) return;
+    if (!roomCode || !userId || !username) return;
 
     connect();
 
@@ -134,7 +147,7 @@ export const useRoomWebSocket = (
       }
       // Don't close on unmount if still connected - let server handle cleanup
     };
-  }, [roomCode, username]);
+  }, [roomCode, userId, username]);
 
   return { sendRoomUpdate, sendSeek };
 };

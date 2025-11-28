@@ -72,16 +72,16 @@ export const api = {
   logout() {
     clearToken();
   },
-  async createRoom(username: string) {
-    return request<{ room: any; code: string }>("/rooms", {
+  async createRoom(username: string, browserFingerprint?: string) {
+    return request<{ room: any; code: string; userId?: string }>("/rooms", {
       method: "POST",
-      body: { username },
+      body: { username, browserFingerprint },
     });
   },
-  async joinRoom(code: string, username: string, browserName?: string, browserVersion?: string) {
-    return request<{ room: any; status?: string; message?: string }>(`/rooms/${code}/join`, {
+  async joinRoom(code: string, username: string, browserName?: string, browserVersion?: string, browserFingerprint?: string) {
+    return request<{ room: any; status?: string; message?: string; userId?: string }>(`/rooms/${code}/join`, {
       method: "POST",
-      body: { username, browserName, browserVersion },
+      body: { username, browserName, browserVersion, browserFingerprint },
     });
   },
   async getRoomWithParticipants(code: string) {
@@ -97,11 +97,12 @@ export const api = {
       is_playing: boolean;
       subtitle_enabled: boolean;
     }>,
-    username?: string
+    username?: string,
+    userId?: string
   ) {
     return request<{ room: any }>(`/rooms/${id}`, {
       method: "PUT",
-      body: { ...updates, username },
+      body: { ...updates, username, userId },
     });
   },
   async listParticipants(roomId: string) {
@@ -202,6 +203,17 @@ export const api = {
   async rejectJoinRequest(code: string, requestId: string) {
     return request<{ message: string }>(`/rooms/${code}/join-requests/${requestId}/reject`, {
       method: "POST",
+    });
+  },
+  async getAllParticipants(code: string) {
+    return request<{ participants: any[] }>(`/rooms/${code}/participants/all`, {
+      method: "GET",
+    });
+  },
+  async updateParticipantStatus(code: string, username: string, status: string) {
+    return request<{ message: string }>(`/rooms/${code}/participants/${username}/status`, {
+      method: "PUT",
+      body: { status },
     });
   },
 };
